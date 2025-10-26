@@ -1,92 +1,104 @@
 # AI-Web-Explorer
 
+一個簡易的原型專案，展示如何把 LLM（Google Generative AI / Gemini）與網頁搜尋工具整合成一個可執行的代理（Agent）。
 
-此專案包含三個主要腳本：
+本專案目前包含：
 
-- `main.py`：互動式問答介面，連接 Google Generative AI（Gemini）。會從 `.env` 讀取 `GOOGLE_API_KEY`，並建立一個 `GenerativeModel` 來回應使用者輸入。
-- `list_models.py`：列出你帳號可存取的 Generative AI 模型（使用 `google.generativeai.list_models()`）。會從 `.env` 讀取 `GOOGLE_API_KEY`。
-- `search.py`：獨立的網路搜尋測試工具，使用 Google Custom Search JSON API，會從 `.env` 讀取 `GOOGLE_CSE_API_KEY` 與 `GOOGLE_CSE_CX`，接收使用者輸入關鍵字並印出原始搜尋結果（標題、連結、摘要）。
+- `main.py` — 互動式問答，直接呼叫 `google.generativeai` 的 model（示範基本的 Gemini 用法）。
+- `list_models.py` — 列出帳號可用的模型（方便選擇）。
+- `search.py` — 原本的 simple_search_tool，現提供程式化函式 `fetch_search_results()` 與 CLI，使用 Google Custom Search JSON API。
+- `agent.py` — 代理（orchestrator），由 LLM 決策是否要搜尋；若需要，呼叫 `search.fetch_search_results()`，把結果交回 LLM 以產生最終摘要。
 
-本 README 會帶你完成環境建立、設定、執行範例、常見問題與後續建議。
+README 會說明如何建立環境、配置 API keys、執行每個腳本，以及常見除錯與後續建議。
 
-## 先決條件
+---
 
-- 已安裝 Python（建議 3.11+）。
-- 建議使用虛擬環境 (`venv`) 來隔離相依套件。
+## 快速準備（Windows / PowerShell）
 
-## 建立與啟用虛擬環境（Windows / PowerShell）
-
-在專案根目錄執行：
+1. 建立並啟用虛擬環境
 
 ```powershell
-# 建立 venv
 python -m venv .venv
-
-# 啟用 venv
 .\.venv\Scripts\Activate.ps1
+```
 
-# 更新 pip 並安裝 requirements
+2. 更新安裝工具並安裝相依
+
+```powershell
 .\.venv\Scripts\python -m pip install --upgrade pip setuptools wheel
 .\.venv\Scripts\python -m pip install -r .\requirements.txt
 ```
 
-提示：若你不想啟用 Activate，可直接用 `.venv\Scripts\python` 呼叫腳本與 pip。
+（如果你的系統 Python 版本是 3.12/3.13 並在安裝時遇到 pydantic-core 或需編譯的套件失敗，請改安裝 Python 3.11 並用它建立 venv，或安裝 Rust toolchain；建議使用 Python 3.11）
 
-## 必要的環境變數（ `.env` ）
+---
 
-請在專案根目錄建立一個 `.env`，至少包含以下兩組變數（依你要執行的腳本而定）：
+## 必要環境變數（`.env`）
+
+在專案根目錄建立 `.env`（不要把真實金鑰推上 public repo）：
 
 ```
-# 用於 Gemini / generativeai
-GOOGLE_API_KEY=你的_Google_Generative_API_Key
+# 用於 Gemini / google-generativeai
+GOOGLE_API_KEY=your_gemini_api_key_here
+# 可選：指定 model
+MODEL_NAME=gemini-2.5-pro
 
-# 用於 Custom Search (search.py)
-GOOGLE_CSE_API_KEY=你的_Google_API_Key_for_Custom_Search
-GOOGLE_CSE_CX=你的_Custom_Search_Engine_ID
+# 用於 Google Custom Search（search.py 與 agent.py 使用）
+GOOGLE_CSE_API_KEY=your_custom_search_api_key_here
+GOOGLE_CSE_CX=your_search_engine_id_here
 ```
 
-（範例：專案中觀察到你使用過 `GOOGLE_CSE_API_KEY` 和 `GOOGLE_CSE_CX`，`main.py` 和 `list_models.py` 使用 `GOOGLE_API_KEY`。）
+注意：你的專案中也曾使用過 `GOOGLE_CSE_API_KEY` / `GOOGLE_CSE_CX`（或 `GOOGLE_CSE_ID`），請把對應的變數放入 `.env`。
 
-注意：不要把 `.env` 推上公開儲存庫。建議新增 `.env.example`（僅列出變數名稱）並把 `.env` 加入 `.gitignore`。
+---
 
-## 執行三個主要腳本
+## 各腳本說明與執行範例
 
-1) 互動式 AI（`main.py`）
+下面提供每個腳本的用途與示範指令（PowerShell）：
+
+### 1) `main.py` — 直接與 Gemini 互動
+
+用途：示範如何用 `google.generativeai` 建立 model 並在 CLI 中與 LLM 對話。
+
+執行：
 
 ```powershell
 .\.venv\Scripts\python .\main.py
 ```
 
-- 此腳本會：
-  - 讀取 `.env` 的 `GOOGLE_API_KEY`。
-  - 使用 `google.generativeai` 設定 API 金鑰，建立 `GenerativeModel('gemini-1.0')`（可自行變更為 `gemini-2.5-pro` 等）。
-  - 以迴圈方式讀取使用者輸入並呼叫 `model.generate_content()`，印出回應文字。
-  - 若沒有找到 `GOOGLE_API_KEY`，會印出錯誤並結束：
+行為要點：
+- 讀取 `GOOGLE_API_KEY`，呼叫 `genai.configure(api_key=...)`。
+- 建立 `GenerativeModel`（預設在程式中可看到是哪個 model），然後在迴圈中呼叫 `model.generate_content()`。
+
+如果缺少 API key，程式會印出錯誤並結束：
 
 ```
 🔴 Error: GOOGLE_API_KEY not found. Please set it in your .env file.
 ```
 
-2) 列出可用模型（`list_models.py`）
+### 2) `list_models.py` — 列出可用模型
+
+用途：查詢帳號可用模型（name、display_name、supported_generation_methods 等），用來選擇合適的 model。
+
+執行：
 
 ```powershell
 .\.venv\Scripts\python .\list_models.py
 ```
 
-- 用於查看帳號可使用的模型名稱（方便在 `main.py` 中指定 model）。
+輸出會列出模型物件或模型清單（大量資訊，適合做為選擇依據）。
 
-3) 網路搜尋測試（`search.py`）
+### 3) `search.py` — Google Custom Search 工具（CLI + 程式化函式）
+
+用途：作為搜尋工具原型，提供 `perform_web_search()`（會印出結果）與 `fetch_search_results()`（回傳 list(dict)）以供 agent 或其他程式呼叫。
+
+執行（互動式）：
 
 ```powershell
 .\.venv\Scripts\python .\search.py
 ```
 
-- `search.py`（你已將 `simple_search_tool.py` 重新命名）會：
-  - 從 `.env` 讀取 `GOOGLE_CSE_API_KEY` 與 `GOOGLE_CSE_CX`。
-  - 接收使用者輸入關鍵字並呼叫 Google Custom Search JSON API。
-  - 印出每條結果的標題（title）、連結（link）與摘要（snippet）。
-
-非互動式測試（PowerShell here-string）
+非互動式（測試）：
 
 ```powershell
 @"
@@ -95,114 +107,73 @@ exit
 "@ | .\.venv\Scripts\python .\search.py
 ```
 
-## 範例輸出（來自 `search.py`）
+回傳欄位（每條 item）：`title`, `link`, `snippet`。
 
+### 4) `agent.py` — LLM + 工具整合的代理
+
+用途：示範 Agent 編排流程：
+
+- 接收使用者問題。 
+- 呼叫 LLM（Gemini）判斷是否需要搜尋（`ask_llm_should_search`，要求 LLM 回傳 JSON 指示）。
+- 若需要則呼叫 `search.fetch_search_results()`，並把結果回傳給 LLM 要求摘要（`ask_llm_summarize`）。
+
+執行：
+
+```powershell
+.\.venv\Scripts\python .\agent.py
 ```
-✅ 簡易搜尋工具已就緒！輸入 'quit' 或 'exit' 來離開。
 
-請輸入要搜尋的關鍵字:
-⚡ 正在為 'Python requests library' 執行網路搜尋...
+行為說明：
+- `agent.py` 會從 `.env` 讀取 Gemini API key 與 Custom Search key/CX。若缺少 Custom Search key，agent 仍可運行但在需要搜尋時會提示錯誤。
+- LLM 決策解讀：agent 嘗試解析 LLM 回傳的 JSON；若解析失敗，agent 會保守處理（不進行搜尋）。你可改進為混合規則（LLM 建議 + 關鍵字規則）。
 
---- 原始搜尋結果 ---
+---
 
-[1] 標題: requests · PyPI
-    連結: https://pypi.org/project/requests/
-    摘要: Installing Requests and Supported Versions ...
-...
-```
-
-## 啟用 Google Custom Search 與 API 權限（快速檢查）
-
-- 在 Google Cloud Console 中確認：
-  - 已為你的專案啟用 **Custom Search JSON API**。
-  - 若使用某些模型或 GCP 服務，也要確認對應 API 已啟用與計費設定（billing）。
-- Custom Search Engine（CSE）設定：
-  - 登入 https://cse.google.com/ 並建立一個搜尋引擎，取得 `cx`（即 `GOOGLE_CSE_CX`）。
-  - 若要搜尋整個網路，CSE 的設定中請選擇“搜尋整個網路”（可能需要額外步驟/設定）。
-
-## 常見問題與除錯
+## 除錯與常見問題
 
 - ModuleNotFoundError: No module named 'google' 或 'dotenv'
-  - 原因：使用的 `python` 不是安裝相依套件的環境。請用：
+  - 原因：你可能在系統 Python（非 venv）執行或尚未安裝相依套件。
+  - 檢查 Python 可執行檔：
 
 ```powershell
 python -c "import sys; print(sys.executable)"
 ```
 
-  - 若結果不是 `.venv\Scripts\python.exe`，請改用該可執行檔安裝或執行：
+  - 若不是 `.venv\Scripts\python.exe`，請使用 venv 的 python 安裝套件或執行程式：
 
 ```powershell
-.\.venv\Scripts\python -m pip install -r requirements.txt
-.\.venv\Scripts\python .\search.py
+.\.venv\Scripts\python -m pip install -r .\requirements.txt
+.\.venv\Scripts\python .\agent.py
 ```
 
-- HTTP 401 / 403 錯誤
-  - 常見原因：API key 無效、未啟用 Custom Search JSON API、或該 key 不允許呼叫該 API。
-  - 解法：確認 `GOOGLE_CSE_API_KEY` 對應正確的 GCP 專案，並在 Cloud Console 啟用 Custom Search JSON API、檢查 API 限制（如 IP 或 referrer 限制）。
+- pydantic-core / wheel build 錯誤（在 Python 3.12/3.13）
+  - 問題：某些套件（例如 pydantic-core）在新 Python 版本上可能需要本機編譯（Rust toolchain），導致 pip build 失敗。
+  - 解法（推薦）：安裝 Python 3.11，並用 `py -3.11 -m venv .venv` 建 venv；或在現有環境安裝 Rust（較複雜）。
 
-- 找不到 `items`（沒有搜尋結果）
-  - 可能是搜尋引擎設為僅搜尋特定網站，或 CSE 尚未正確設定為搜尋整個網路。
+- API 401 / 403 或權限錯誤
+  - 檢查 `.env` 的 key 是否正確、API 是否在 Google Cloud Console 中啟用、以及金鑰是否有呼叫限制（IP、HTTP referrer）。
 
-## 安全建議
-
-- 永遠把 `.env` 加入 `.gitignore`，不要將真實 API key 提交到公開版本控制。建議加入 `.env.example`（只包含變數名與說明）。
-
-## 後續改進建議（你可以指派我實作）
-
-- 把 `search.py` 的結果同時輸出為 JSON（例如 `results.json`），方便程式化處理。 
-- 將 `main.py` 改為接受 CLI 引數或設定檔來指定 model name、temperature、max tokens 等參數。
-- 把 `list_models.py` 的輸出匯出為 JSON，以及新增小工具選擇支援 `generateContent` 的模型。
+- Custom Search 找不到 `items`
+  - 檢查你的 CSE（cx）是否設定為搜尋整個網路或包含你要的目標網站。
 
 ---
 
-如果你要，我可以立刻：
+## 安全與最佳實務
 
-- 新增 `.env.example` 與更新 `.gitignore`（把 `.env` 忽略），
-- 把 `search.py` 改為同時輸出 JSON 檔（例如 `results.json`），並在 README 裡加入範例，或
-- 把 `main.py` 改成可從 CLI 指定 model name（並新增小型單元測試）。
+- 把 `.env` 加入 `.gitignore`，不要上傳 API key。建議新增一個 `.env.example` 只包含變數名稱。
+- 在 agent 中限制回傳給 LLM 的上下文長度（只提供必要的 title/snippet/link），以節省 token 並避免洩露不必要的內容。
 
-請告訴我你要我做哪一件，我會立刻著手實作。
-# AI-Web-Explorer
+---
 
-說明：這份 README 說明如何在 Windows (PowerShell) 建立虛擬環境、安裝相依套件，並執行 `main.py`。
+## 建議的下一步（我可以代工）
 
-## 前置條件
-- Python 3.11+ 建議（確認你的系統已安裝 Python）。
+1. 新增 `.env.example` 與更新 `.gitignore`（把 `.env` 忽略）。
+2. 把 `search.py` 的程式化搜尋結果同時輸出 JSON（`results.json`），並在 `agent.py` 將相關 metadata 儲存到檔案以便追蹤。
+3. 強化 `ask_llm_should_search`：採用 LLM 提議 + 規則過濾的混合決策以降低誤判。
+4. 將 `main.py`/`agent.py` 改為可用 CLI 參數（argparse）指定 model、temperature、max_tokens，以便實驗不同組合。
 
-## 建立虛擬環境（在專案根目錄）
-在專案根目錄（包含 `main.py` 與 `requirements.txt`）執行：
-# AI-Web-Explorer
+如果要我幫你做其中一項或全部，告訴我優先順序，我會立刻實作。
 
-完整說明（繁體中文） — 這份 README 會帶你從環境建立到執行範例，並清楚說明專案中兩個主要程式的用途：`main.py`（互動式問答介面）與 `list_models.py`（列出可用模型）。
-
-## 專案概覽
-- `main.py`：互動式 CLI，載入 `.env` 的 `GOOGLE_API_KEY`，設定 `google.generativeai`，建立一個 `GenerativeModel` 並在迴圈中讀取使用者輸入，呼叫模型產生回應後印出（使用者可輸入 `exit` 或 `quit` 離開）。
-- `list_models.py`：載入 `.env` 的 `GOOGLE_API_KEY` 並呼叫 `google.generativeai.list_models()`，列出帳號可用的模型清單（方便你選擇要在 `main.py` 中使用的 model name）。
-
-程式設計重點：兩個程式都使用 `python-dotenv` 讀取 `.env`（選擇性）與 `google-generativeai` 套件去連到 Google 的 Generative AI 服務。
-
-> 安全提醒：不要把真實的 API key 推上公開版控（例如 GitHub）。把 `.env` 加入 `.gitignore`，並用 `.env.example` 提供變數範例。
-
-## 目標平台
-- Windows（PowerShell） — README 中的命令以 PowerShell 為主，其他 shell 也適用但語法略有不同。
-
-## 前置需求
-- 已安裝 Python（建議 3.11+）。
-- 建議使用虛擬環境（`venv`）來隔離套件。
-
-## 快速開始（建立 venv、安裝套件）
-在專案根目錄（包含 `main.py`、`list_models.py`、`requirements.txt`）執行：
-
-```powershell
-# 建立虛擬環境
-python -m venv .venv
-
-# 更新 pip 並安裝 requirements
-.\.venv\Scripts\python -m pip install --upgrade pip
-.\.venv\Scripts\python -m pip install -r .\requirements.txt
-```
-
-備註：若系統 `python` 指向其他安裝（例如 Inkscape 或其他程式隨附的 Python），請改用該環境的完整路徑或使用剛建立的 `.venv\Scripts\python`。
 
 ## 設定 API Key（`.env`）
 在專案根目錄建立 `.env` 檔案，內容格式如下（不要加到版本控制）：
@@ -350,16 +321,3 @@ exit
 
 ## 範例 `.env.example`
 ```
-# 請複製為 .env 並填入你的金鑰
-GOOGLE_API_KEY=YOUR_GOOGLE_API_KEY_HERE
-```
-
-## 安全提示
-- 請勿將 `.env`（含 API 金鑰）提交到公開的版本控制系統。把 `.env` 加入 `.gitignore`（如尚未加入）。
-
-## 其他備註
-- 若你要在 CI 或遠端伺服器上執行，請在該環境使用相同步驟建立虛擬環境或使用容器化方式。 
-
----
-
-若要我把一個 `.env.example` 檔案與 `.gitignore` 更新加入專案，我也可以替你新增。告訴我你要我幫忙的細節（例如預設 .gitignore 項目）。

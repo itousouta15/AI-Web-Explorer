@@ -40,15 +40,18 @@ def perform_web_search(query: str, api_key: str, cse_id: str, num_results: int =
             return
             
         print("\n--- 原始搜尋結果 ---")
-        # 印出每一條結果
+        # 遍歷並印出每一條結果
         for i, item in enumerate(search_results['items']):
             title = item.get('title', '無標題')
             link = item.get('link', '無連結')
-            snippet = item.get('snippet', '無摘要').replace('\n', ' ') # 移除換行符
+            snippet = item.get('snippet', '無摘要').replace('\n', ' ') # 移除摘要中的換行符
             
             print(f"\n[{i+1}] 標題: {title}")
             print(f"    連結: {link}")
             print(f"    摘要: {snippet}")
+            
+        # 回傳原始 items 以便程式化使用
+        return search_results['items']
             
     except requests.exceptions.HTTPError as http_err:
         print(f"HTTP 錯誤: {http_err}")
@@ -80,3 +83,32 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+def fetch_search_results(query: str, api_key: str, cse_id: str, num_results: int = 5):
+    """程式化取得搜尋結果並回傳 list(dict)（不印出）。
+
+    回傳的每個 dict 包含至少 'title', 'link', 'snippet' 等鍵（若無則為預設值）。
+    """
+    url = "https://www.googleapis.com/customsearch/v1"
+    params = {
+        'q': query,
+        'key': api_key,
+        'cx': cse_id,
+        'num': num_results
+    }
+
+    try:
+        response = requests.get(url, params=params)
+        response.raise_for_status()
+        results = response.json()
+        items = results.get('items', [])
+        normalized = []
+        for item in items:
+            normalized.append({
+                'title': item.get('title', ''),
+                'link': item.get('link', ''),
+                'snippet': item.get('snippet', '').replace('\n', ' ')
+            })
+        return normalized
+    except Exception:
+        return []
