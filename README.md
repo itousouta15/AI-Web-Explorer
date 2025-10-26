@@ -1,5 +1,169 @@
 # AI-Web-Explorer
 
+
+此專案包含三個主要腳本：
+
+- `main.py`：互動式問答介面，連接 Google Generative AI（Gemini）。會從 `.env` 讀取 `GOOGLE_API_KEY`，並建立一個 `GenerativeModel` 來回應使用者輸入。
+- `list_models.py`：列出你帳號可存取的 Generative AI 模型（使用 `google.generativeai.list_models()`）。會從 `.env` 讀取 `GOOGLE_API_KEY`。
+- `search.py`：獨立的網路搜尋測試工具，使用 Google Custom Search JSON API，會從 `.env` 讀取 `GOOGLE_CSE_API_KEY` 與 `GOOGLE_CSE_CX`，接收使用者輸入關鍵字並印出原始搜尋結果（標題、連結、摘要）。
+
+本 README 會帶你完成環境建立、設定、執行範例、常見問題與後續建議。
+
+## 先決條件
+
+- 已安裝 Python（建議 3.11+）。
+- 建議使用虛擬環境 (`venv`) 來隔離相依套件。
+
+## 建立與啟用虛擬環境（Windows / PowerShell）
+
+在專案根目錄執行：
+
+```powershell
+# 建立 venv
+python -m venv .venv
+
+# 啟用 venv
+.\.venv\Scripts\Activate.ps1
+
+# 更新 pip 並安裝 requirements
+.\.venv\Scripts\python -m pip install --upgrade pip setuptools wheel
+.\.venv\Scripts\python -m pip install -r .\requirements.txt
+```
+
+提示：若你不想啟用 Activate，可直接用 `.venv\Scripts\python` 呼叫腳本與 pip。
+
+## 必要的環境變數（ `.env` ）
+
+請在專案根目錄建立一個 `.env`，至少包含以下兩組變數（依你要執行的腳本而定）：
+
+```
+# 用於 Gemini / generativeai
+GOOGLE_API_KEY=你的_Google_Generative_API_Key
+
+# 用於 Custom Search (search.py)
+GOOGLE_CSE_API_KEY=你的_Google_API_Key_for_Custom_Search
+GOOGLE_CSE_CX=你的_Custom_Search_Engine_ID
+```
+
+（範例：專案中觀察到你使用過 `GOOGLE_CSE_API_KEY` 和 `GOOGLE_CSE_CX`，`main.py` 和 `list_models.py` 使用 `GOOGLE_API_KEY`。）
+
+注意：不要把 `.env` 推上公開儲存庫。建議新增 `.env.example`（僅列出變數名稱）並把 `.env` 加入 `.gitignore`。
+
+## 執行三個主要腳本
+
+1) 互動式 AI（`main.py`）
+
+```powershell
+.\.venv\Scripts\python .\main.py
+```
+
+- 此腳本會：
+  - 讀取 `.env` 的 `GOOGLE_API_KEY`。
+  - 使用 `google.generativeai` 設定 API 金鑰，建立 `GenerativeModel('gemini-1.0')`（可自行變更為 `gemini-2.5-pro` 等）。
+  - 以迴圈方式讀取使用者輸入並呼叫 `model.generate_content()`，印出回應文字。
+  - 若沒有找到 `GOOGLE_API_KEY`，會印出錯誤並結束：
+
+```
+🔴 Error: GOOGLE_API_KEY not found. Please set it in your .env file.
+```
+
+2) 列出可用模型（`list_models.py`）
+
+```powershell
+.\.venv\Scripts\python .\list_models.py
+```
+
+- 用於查看帳號可使用的模型名稱（方便在 `main.py` 中指定 model）。
+
+3) 網路搜尋測試（`search.py`）
+
+```powershell
+.\.venv\Scripts\python .\search.py
+```
+
+- `search.py`（你已將 `simple_search_tool.py` 重新命名）會：
+  - 從 `.env` 讀取 `GOOGLE_CSE_API_KEY` 與 `GOOGLE_CSE_CX`。
+  - 接收使用者輸入關鍵字並呼叫 Google Custom Search JSON API。
+  - 印出每條結果的標題（title）、連結（link）與摘要（snippet）。
+
+非互動式測試（PowerShell here-string）
+
+```powershell
+@"
+Python requests library
+exit
+"@ | .\.venv\Scripts\python .\search.py
+```
+
+## 範例輸出（來自 `search.py`）
+
+```
+✅ 簡易搜尋工具已就緒！輸入 'quit' 或 'exit' 來離開。
+
+請輸入要搜尋的關鍵字:
+⚡ 正在為 'Python requests library' 執行網路搜尋...
+
+--- 原始搜尋結果 ---
+
+[1] 標題: requests · PyPI
+    連結: https://pypi.org/project/requests/
+    摘要: Installing Requests and Supported Versions ...
+...
+```
+
+## 啟用 Google Custom Search 與 API 權限（快速檢查）
+
+- 在 Google Cloud Console 中確認：
+  - 已為你的專案啟用 **Custom Search JSON API**。
+  - 若使用某些模型或 GCP 服務，也要確認對應 API 已啟用與計費設定（billing）。
+- Custom Search Engine（CSE）設定：
+  - 登入 https://cse.google.com/ 並建立一個搜尋引擎，取得 `cx`（即 `GOOGLE_CSE_CX`）。
+  - 若要搜尋整個網路，CSE 的設定中請選擇“搜尋整個網路”（可能需要額外步驟/設定）。
+
+## 常見問題與除錯
+
+- ModuleNotFoundError: No module named 'google' 或 'dotenv'
+  - 原因：使用的 `python` 不是安裝相依套件的環境。請用：
+
+```powershell
+python -c "import sys; print(sys.executable)"
+```
+
+  - 若結果不是 `.venv\Scripts\python.exe`，請改用該可執行檔安裝或執行：
+
+```powershell
+.\.venv\Scripts\python -m pip install -r requirements.txt
+.\.venv\Scripts\python .\search.py
+```
+
+- HTTP 401 / 403 錯誤
+  - 常見原因：API key 無效、未啟用 Custom Search JSON API、或該 key 不允許呼叫該 API。
+  - 解法：確認 `GOOGLE_CSE_API_KEY` 對應正確的 GCP 專案，並在 Cloud Console 啟用 Custom Search JSON API、檢查 API 限制（如 IP 或 referrer 限制）。
+
+- 找不到 `items`（沒有搜尋結果）
+  - 可能是搜尋引擎設為僅搜尋特定網站，或 CSE 尚未正確設定為搜尋整個網路。
+
+## 安全建議
+
+- 永遠把 `.env` 加入 `.gitignore`，不要將真實 API key 提交到公開版本控制。建議加入 `.env.example`（只包含變數名與說明）。
+
+## 後續改進建議（你可以指派我實作）
+
+- 把 `search.py` 的結果同時輸出為 JSON（例如 `results.json`），方便程式化處理。 
+- 將 `main.py` 改為接受 CLI 引數或設定檔來指定 model name、temperature、max tokens 等參數。
+- 把 `list_models.py` 的輸出匯出為 JSON，以及新增小工具選擇支援 `generateContent` 的模型。
+
+---
+
+如果你要，我可以立刻：
+
+- 新增 `.env.example` 與更新 `.gitignore`（把 `.env` 忽略），
+- 把 `search.py` 改為同時輸出 JSON 檔（例如 `results.json`），並在 README 裡加入範例，或
+- 把 `main.py` 改成可從 CLI 指定 model name（並新增小型單元測試）。
+
+請告訴我你要我做哪一件，我會立刻著手實作。
+# AI-Web-Explorer
+
 說明：這份 README 說明如何在 Windows (PowerShell) 建立虛擬環境、安裝相依套件，並執行 `main.py`。
 
 ## 前置條件
